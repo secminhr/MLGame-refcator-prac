@@ -16,7 +16,6 @@ class MLGameArgument(pydantic.BaseModel):
     progress_frame_frequency: int = 300
     one_shot_mode: bool = False
     ai_clients: Optional[List[FilePath]] = None
-    is_manual: bool = False
     no_display: bool = True
     ws_url: pydantic.AnyUrl = None
     game_folder: DirectoryPath

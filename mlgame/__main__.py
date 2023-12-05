@@ -29,7 +29,7 @@ if __name__ == '__main__':
     print(f"===========Game is started at {datetime.datetime.now()}===========")
     from mlgame.core.communication import GameCommManager
     from mlgame.core.process import create_process_of_ai_clients_and_start, create_process_of_ws_and_start, create_process_of_progress_log_and_start, terminate
-    from mlgame.core.executor import GameExecutor, GameManualExecutor
+    from mlgame.core.executor import GameExecutor
     from mlgame.view.view import PygameView, DummyPygameView
     game_comm = GameCommManager()
     try:
@@ -42,31 +42,22 @@ if __name__ == '__main__':
             progress_proc = create_process_of_progress_log_and_start(game_comm, arg_obj.progress_folder, arg_obj.progress_frame_frequency)
 
         # 4. prepare ai_clients , create pipe, start ai_client process
-        if arg_obj.is_manual:
-            # only play in local and manual mode and will show view
-            # TODO to deprecated and use ml_play_manual.py to alternate
-            game_view = PygameView(game.get_scene_init_data())
-            game_executor = GameManualExecutor(
-                game, game_view, game_comm, fps=arg_obj.fps, one_shot_mode=arg_obj.one_shot_mode)
-
+        if arg_obj.no_display:
+            game_view = DummyPygameView(game.get_scene_init_data())
         else:
-            # play game with ai_clients
-            if arg_obj.no_display:
-                game_view = DummyPygameView(game.get_scene_init_data())
-            else:
-                game_view = PygameView(game.get_scene_init_data())
-            ai_process = create_process_of_ai_clients_and_start(
-                game_comm=game_comm,
-                path_of_ai_clients=path_of_ai_clients,
-                game_params=parsed_game_params
-            )
-            
-            # 5. run game in main process
-            game_executor = GameExecutor(
-                game, game_comm, game_view,
-                fps=arg_obj.fps, one_shot_mode=arg_obj.one_shot_mode, no_display=arg_obj.no_display,
-                output_folder=arg_obj.output_folder
-            )
+            game_view = PygameView(game.get_scene_init_data())
+        ai_process = create_process_of_ai_clients_and_start(
+            game_comm=game_comm,
+            path_of_ai_clients=path_of_ai_clients,
+            game_params=parsed_game_params
+        )
+
+        # 5. run game in main process
+        game_executor = GameExecutor(
+            game, game_comm, game_view,
+            fps=arg_obj.fps, one_shot_mode=arg_obj.one_shot_mode, no_display=arg_obj.no_display,
+            output_folder=arg_obj.output_folder
+        )
         time.sleep(0.1)
         game_executor.run()
 
