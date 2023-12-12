@@ -44,28 +44,10 @@ class AIClientExecutor(ExecutorInterface):
 
             # cmd = ai_obj.update({})
             logger.info("             AI Client runs")
-            self._ml_ready()
             while True:
-                data = self._recv_data_from_game()
-                if not data:
+                restart = self._ai_loop(ai_obj)
+                if not restart:
                     break
-                scene_info, keyboard_info = data
-
-                # assert keyboard_info == "1"
-                command = ai_obj.update(scene_info, keyboard_info)
-                if scene_info["status"] != "GAME_ALIVE" or command == "RESET":
-                    command = "RESET"
-                    ai_obj.reset()
-                    self._frame_count = 0
-                    self._ml_ready()
-                else:
-                    if command is not None:
-                        # 收到資料就回傳
-                        self.ai_comm.send_to_game({
-                            "frame": self._frame_count,
-                            "command": command
-                        })
-                    self._frame_count += 1
         # Stop the client of the crosslang module
         except ModuleNotFoundError as e:
             failed_module_name = e.__str__().split("'")[1]
@@ -115,17 +97,31 @@ class AIClientExecutor(ExecutorInterface):
 
         return scene_info, keyboard_info
 
-    def _ai_single_step(self, scene_info, command, ai_obj):
-        data = self.ai_comm.recv_from_game()
-        if not data:
-            return None
-        scene_info, keyboard_info = data
-        if scene_info is None:
-            # game over
-            return None
+    def _ai_loop(self, ai_obj):
+        '''
+        run ai loop. exit when ai should end or restart
+        return True if ai should restart, False if ai should end
+        '''
+        self._frame_count = 0
+        self._ml_ready()
+        while True:
+            data = self._recv_data_from_game()
+            if not data:
+                return False
 
-        command = ai_obj.update(scene_info, keyboard_info)
+            scene_info, keyboard_info = data
+            command = ai_obj.update(scene_info, keyboard_info)
+            if scene_info["status"] != "GAME_ALIVE" or command == "RESET":
+                ai_obj.reset()
+                return True
 
+            if command is not None:
+                # 收到資料就回傳
+                self.ai_comm.send_to_game({
+                    "frame": self._frame_count,
+                    "command": command
+                })
+            self._frame_count += 1
 
 
     def _send_error_to_game_with_message(self, message):
