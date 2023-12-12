@@ -40,27 +40,16 @@ class AIClientExecutor(ExecutorInterface):
     def run(self):
         self.ai_comm.start_recv_obj_thread()
         try:
-            module_name = os.path.basename(self.ai_path)
-            spec = importlib.util.spec_from_file_location(
-                module_name, self.ai_path)
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            ai_obj = module.MLPlay(ai_name=self.ai_name,
-                                   game_params=self.game_params)
+            ai_obj = self._start_up_ai_client()
 
             # cmd = ai_obj.update({})
             logger.info("             AI Client runs")
             self._ml_ready()
             while True:
-                data = self.ai_comm.recv_from_game()
-                if data:
-                    scene_info, keyboard_info = data
-                    if scene_info is None:
-                        # game over
-                        break
-                else:
-                    # print(f"ai receive from game : {data}")
+                data = self._recv_data_from_game()
+                if not data:
                     break
+                scene_info, keyboard_info = data
 
                 # assert keyboard_info == "1"
                 command = ai_obj.update(scene_info, keyboard_info)
@@ -69,62 +58,82 @@ class AIClientExecutor(ExecutorInterface):
                     ai_obj.reset()
                     self._frame_count = 0
                     self._ml_ready()
-                    continue
-                if command is not None:
-                    # 收到資料就回傳
-                    self.ai_comm.send_to_game({
-                        "frame": self._frame_count,
-                        "command": command
-                    })
-                self._frame_count += 1
+                else:
+                    if command is not None:
+                        # 收到資料就回傳
+                        self.ai_comm.send_to_game({
+                            "frame": self._frame_count,
+                            "command": command
+                        })
+                    self._frame_count += 1
         # Stop the client of the crosslang module
         except ModuleNotFoundError as e:
             failed_module_name = e.__str__().split("'")[1]
             logger.exception(
                 f"Module '{failed_module_name}' is not found in {self._proc_name}")
-            exception = MLProcessError(self._proc_name,
-                                       "The process '{}' is exited by itself. {}"
-                                       .format(self._proc_name, traceback.format_exc()))
             # send msg to game process
-            ai_error = GameError(
-                error_type=ErrorEnum.AI_EXEC_ERROR, frame=self._frame_count,
-                message="The process '{}' is exited by itself. {}".format(
-                    self.ai_name, traceback.format_exc())
+            self._send_error_to_game_with_message(
+                f"The process '{self.ai_name}' is exited by itself. {traceback.format_exc()}"
             )
-
-            self.ai_comm.send_to_game(ai_error)
-
         except Exception as e:
             # handle ai other error
             logger.exception(f"Error is happened in {self._proc_name}")
-            exception = MLProcessError(self._proc_name,
-                                       "The process '{}' is exited by itself. {}"
-                                       .format(self._proc_name, traceback.format_exc()))
-            ai_error = GameError(
-                error_type=ErrorEnum.AI_EXEC_ERROR, frame=self._frame_count,
-                message=f"The process '{self.ai_name}' is exited by itself. {traceback.format_exc()}"
+            self._send_error_to_game_with_message(
+                f"The process '{self.ai_name}' is exited by itself. {traceback.format_exc()}"
             )
-
-            self.ai_comm.send_to_game(ai_error)
         except SystemExit:  # Catch the exception made by 'sys.exit()'
             print("             System exit at ai client process ")
-
-            ai_error = GameError(
-                error_type=ErrorEnum.AI_EXEC_ERROR, frame=self._frame_count,
-                message=f"The process '{self.ai_name}' is exited by sys.exit. : {traceback.format_exc()}"
+            self._send_error_to_game_with_message(
+                f"The process '{self.ai_name}' is exited by sys.exit. {traceback.format_exc()}"
             )
 
-            self.ai_comm.send_to_game(ai_error)
-        if module == "mlgame.crosslang.ml_play":
-            # TODO crosslang
-            ai_obj.stop_client()
         print("             AI Client ends")
+
+    def _start_up_ai_client(self):
+        module_name = os.path.basename(self.ai_path)
+        spec = importlib.util.spec_from_file_location(module_name, self.ai_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        ai_obj = module.MLPlay(ai_name=self.ai_name, game_params=self.game_params)
+
+        return ai_obj
 
     def _ml_ready(self):
         """
         Send a "READY" command to the game process
         """
         self.ai_comm.send_to_game("READY")
+
+    def _recv_data_from_game(self):
+        data = self.ai_comm.recv_from_game()
+        if not data:
+            return None
+        scene_info, keyboard_info = data
+        if scene_info is None:
+            # game over
+            return None
+
+        return scene_info, keyboard_info
+
+    def _ai_single_step(self, scene_info, command, ai_obj):
+        data = self.ai_comm.recv_from_game()
+        if not data:
+            return None
+        scene_info, keyboard_info = data
+        if scene_info is None:
+            # game over
+            return None
+
+        command = ai_obj.update(scene_info, keyboard_info)
+
+
+
+    def _send_error_to_game_with_message(self, message):
+        ai_error = GameError(
+            error_type=ErrorEnum.AI_EXEC_ERROR, frame=self._frame_count,
+            message=message
+        )
+        self.ai_comm.send_to_game(ai_error)
 
 
 class GameExecutor(ExecutorInterface):
