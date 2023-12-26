@@ -5,6 +5,7 @@ import json
 import os
 import time
 import traceback
+from typing import Callable
 
 import pandas as pd
 import websockets
@@ -26,11 +27,38 @@ class ExecutorInterface(abc.ABC):
         pass
 
 
+class AIClient(abc.ABC):
+    @abc.abstractmethod
+    def update(self, scene_info, keyboard):
+        pass
+
+    @abc.abstractmethod
+    def reset(self):
+        pass
+
+    @classmethod
+    def __subclasshook__(cls, subclass):
+        return (hasattr(subclass, 'update') and callable(subclass.update) and
+                hasattr(subclass, 'reset') and callable(subclass.reset))
+
+
 class AIClientExecutor(ExecutorInterface):
-    def __init__(self, ai_client_path: str, ai_comm: MLCommManager, ai_name="1P", game_params: dict = {}):
+    @classmethod
+    def ai_client_loader(cls, ai_client_path: str):
+        def load_ai_client(ai_name, game_params):
+            module_name = os.path.basename(ai_client_path)
+            spec = importlib.util.spec_from_file_location(module_name, ai_client_path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module.MLPlay(ai_name=ai_name, game_params=game_params)
+
+        return load_ai_client
+
+    def __init__(self, ai_client_path: str, ai_comm: MLCommManager, ai_name="1P",
+                 game_params: dict = {}, ai_loader: Callable[[str, dict], AIClient] = None):
         self._frame_count = 0
         self.ai_comm = ai_comm
-        self.ai_path = ai_client_path
+        self.ai_loader = ai_loader if ai_loader else AIClientExecutor.ai_client_loader(ai_client_path)
         self._proc_name = ai_client_path
         # self._args_for_ml_play = args
         # self._kwargs_for_ml_play = kwargs
@@ -40,7 +68,7 @@ class AIClientExecutor(ExecutorInterface):
     def run(self):
         self.ai_comm.start_recv_obj_thread()
         try:
-            ai_obj = self._start_up_ai_client()
+            ai_obj = self.ai_loader(self.ai_name, self.game_params)
 
             # cmd = ai_obj.update({})
             logger.info("             AI Client runs")
@@ -70,15 +98,6 @@ class AIClientExecutor(ExecutorInterface):
             )
 
         print("             AI Client ends")
-
-    def _start_up_ai_client(self):
-        module_name = os.path.basename(self.ai_path)
-        spec = importlib.util.spec_from_file_location(module_name, self.ai_path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        ai_obj = module.MLPlay(ai_name=self.ai_name, game_params=self.game_params)
-
-        return ai_obj
 
     def _ml_ready(self):
         """
