@@ -69,13 +69,8 @@ class AIClientExecutor(ExecutorInterface):
         self.ai_comm.start_recv_obj_thread()
         try:
             ai_obj = self.ai_loader(self.ai_name, self.game_params)
-
-            # cmd = ai_obj.update({})
             logger.info("             AI Client runs")
-            while True:
-                restart = self._ai_loop(ai_obj)
-                if not restart:
-                    break
+            self._game_loop(ai_obj)
         # Stop the client of the crosslang module
         except ModuleNotFoundError as e:
             failed_module_name = e.__str__().split("'")[1]
@@ -99,22 +94,18 @@ class AIClientExecutor(ExecutorInterface):
 
         print("             AI Client ends")
 
-    def _ml_ready(self):
-        """
-        Send a "READY" command to the game process
-        """
-        self.ai_comm.send_to_game("READY")
+    def _send_error_to_game_with_message(self, message):
+        ai_error = GameError(
+            error_type=ErrorEnum.AI_EXEC_ERROR, frame=self._frame_count,
+            message=message
+        )
+        self.ai_comm.send_to_game(ai_error)
 
-    def _recv_data_from_game(self):
-        data = self.ai_comm.recv_from_game()
-        if not data:
-            return None
-        scene_info, keyboard_info = data
-        if scene_info is None:
-            # game over
-            return None
-
-        return scene_info, keyboard_info
+    def _game_loop(self, ai_obj):
+        while True:
+            restart = self._ai_loop(ai_obj)
+            if not restart:
+                return
 
     def _ai_loop(self, ai_obj):
         '''
@@ -134,7 +125,7 @@ class AIClientExecutor(ExecutorInterface):
                 ai_obj.reset()
                 return True
 
-            if command is not None:
+            if not command:
                 # 收到資料就回傳
                 self.ai_comm.send_to_game({
                     "frame": self._frame_count,
@@ -142,13 +133,22 @@ class AIClientExecutor(ExecutorInterface):
                 })
             self._frame_count += 1
 
+    def _ml_ready(self):
+        """
+        Send a "READY" command to the game process
+        """
+        self.ai_comm.send_to_game("READY")
 
-    def _send_error_to_game_with_message(self, message):
-        ai_error = GameError(
-            error_type=ErrorEnum.AI_EXEC_ERROR, frame=self._frame_count,
-            message=message
-        )
-        self.ai_comm.send_to_game(ai_error)
+    def _recv_data_from_game(self):
+        data = self.ai_comm.recv_from_game()
+        if not data:
+            return None
+        scene_info, keyboard_info = data
+        if not scene_info:
+            # game over
+            return None
+
+        return scene_info, keyboard_info
 
 
 class GameExecutor(ExecutorInterface):
