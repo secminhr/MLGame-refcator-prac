@@ -125,7 +125,7 @@ class AIClientExecutor(ExecutorInterface):
                 ai_obj.reset()
                 return True
 
-            if not command:
+            if command:
                 # 收到資料就回傳
                 self.ai_comm.send_to_game({
                     "frame": self._frame_count,
