@@ -86,10 +86,12 @@ def _mock_view() -> (PygameViewInterface, Mock):
     view = TestPygameView()
     view.is_paused = Mock(return_value=False)
     view.draw = Mock()
+    view.reset = Mock()
 
     view_interface_mock = Mock()
     view_interface_mock.is_paused = view.is_paused
     view_interface_mock.draw = view.draw
+    view_interface_mock.reset = view.reset
 
     return view, view_interface_mock
 
@@ -114,7 +116,8 @@ class TestGameExecutor:
             game,
             game_comm_manager,
             view,
-            no_display=True
+            no_display=True,
+            fps=5000 # use high fps to run test quickly
         )
 
         executor.run()
@@ -150,7 +153,8 @@ class TestGameExecutor:
             game,
             game_comm_manager,
             view,
-            no_display=True
+            no_display=True,
+            fps=5000  # use high fps to run test quickly
         )
 
         executor.run()
@@ -173,6 +177,7 @@ class TestGameExecutor:
                 expect_calls.send_to_ml.send(('game data', []))
                 if game == 0:
                     expect_calls.game_mock.reset()
+                    expect_calls.view_mock.reset()
 
             # last game update return QUIT
             expect_calls.send_to_other.send({'type': 'system_message', 'data': {'message': '遊戲結束'}})

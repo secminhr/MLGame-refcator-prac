@@ -183,46 +183,39 @@ class GameExecutor(ExecutorInterface):
         self._proc_name = str(self.game)
 
     def run(self):
-        game = self.game
-        game_view = self.game_view
         try:
             self._send_system_message("AI準備中")
-            self._send_game_info(game.get_scene_init_data())
+            self._send_game_info(self.game.get_scene_init_data())
             self._wait_all_ml_ready()
             self._send_system_message("遊戲啟動")
             while not self._quit_or_esc():
-                if game_view.is_paused():
+                if self.game_view.is_paused():
                     # 這裡的寫法不太好，但是可以讓遊戲暫停時，可以調整畫面。因為game_view裡面有調整畫面的程式。
-                    game_view.draw(self._view_data)
+                    self.game_view.draw(self._view_data)
                     time.sleep(0.05)
                     continue
-                scene_info_dict = game.get_data_from_game_to_player()
-                keyboard_info = game_view.get_keyboard_info()
-                cmd_dict = self._make_ml_execute(
-                    scene_info_dict, keyboard_info)
+                cmd_dict = self._make_ml_execute()
+                result = self.game.update(cmd_dict)
 
-                # self._recorder.record(scene_info_dict, cmd_dict)
-
-                result = game.update(cmd_dict)
                 self._frame_count += 1
                 self._total_frame += 1
-                self._view_data = game.get_scene_progress_data()
-                game_view.draw(self._view_data)
+                self._view_data = self.game.get_scene_progress_data()
+                self.game_view.draw(self._view_data)
                 # save image
                 if self._output_folder:
-                    game_view.save_image(f"{self._output_folder}/{self._frame_count:05d}.jpg")
+                    self.game_view.save_image(f"{self._output_folder}/{self._frame_count:05d}.jpg")
                 self._send_game_progress(self._view_data)
 
                 # Do reset stuff
                 if result == "RESET" or result == "QUIT":
-                    scene_info_dict = game.get_data_from_game_to_player()
+                    scene_info_dict = self.game.get_data_from_game_to_player()
                     # send to ml_clients and don't parse any command , while client reset ,
                     # self._wait_all_ml_ready() will works and not blocks the process
                     for ml_name in self._active_ml_names:
                         self.game_comm.send_to_ml((scene_info_dict[ml_name], []), ml_name)
                     # TODO check what happen when bigfile is saved
                     time.sleep(0.1)
-                    game_result = game.get_game_result()
+                    game_result = self.game.get_game_result()
 
                     attachments = game_result['attachment']
                     print(pd.DataFrame(attachments).to_string())
@@ -238,8 +231,8 @@ class GameExecutor(ExecutorInterface):
 
                         break
 
-                    game.reset()
-                    game_view.reset()
+                    self.game.reset()
+                    self.game_view.reset()
 
                     self._frame_count = 0
                     # TODO think more
@@ -291,13 +284,15 @@ class GameExecutor(ExecutorInterface):
 
                     break
 
-    def _make_ml_execute(self, scene_info_dict, keyboard_info) -> dict:
+    def _make_ml_execute(self) -> dict:
         """
         Send the scene information to all ml processes and wait for commands
 
         @return A dict of the recevied command from the ml clients
                 If the client didn't send the command, it will be `None`.
         """
+        scene_info_dict = self.game.get_data_from_game_to_player()
+        keyboard_info = self.game_view.get_keyboard_info()
         try:
             for ml_name in self._active_ml_names:
                 self.game_comm.send_to_ml((scene_info_dict[ml_name], keyboard_info), ml_name)
@@ -310,32 +305,10 @@ class GameExecutor(ExecutorInterface):
         response_dict = self.game_comm.recv_from_all_ml()
 
         cmd_dict = {}
-        for ml_name in self._active_ml_names[:]:
-            cmd_received = response_dict[ml_name]
-            if isinstance(cmd_received, MLProcessError):
-                # print(cmd_received.message)
-                # handle error from ai clients
-                self._send_game_error_with_obj(GameError(
-                    error_type=ErrorEnum.AI_EXEC_ERROR,
-                    message=str(cmd_received),
-                    frame=self._frame_count
-                ))
-                self._dead_ml_names.append(ml_name)
-                self._active_ml_names.remove(ml_name)
-            elif isinstance(cmd_received, GameError):
-                self._send_game_error_with_obj(cmd_received)
-                self._dead_ml_names.append(ml_name)
-                self._active_ml_names.remove(ml_name)
-            elif isinstance(cmd_received, dict):
-                self._check_delay(ml_name, cmd_received["frame"])
-                cmd_dict[ml_name] = cmd_received["command"]
-            else:
-                cmd_dict[ml_name] = None
+        for ml_name in self._active_ml_names:
+            cmd_dict[ml_name] = self._handle_command_from_ml(response_dict[ml_name], ml_name)
 
-        for ml_name in self._dead_ml_names:
-            cmd_dict[ml_name] = None
-
-        if len(self._active_ml_names) == 0:
+        if not self._active_ml_names:
             error = MLProcessError(
                 self._proc_name,
                 f"The process {self._proc_name} exit because all ml processes has exited.")
@@ -349,6 +322,29 @@ class GameExecutor(ExecutorInterface):
 
             raise error
         return cmd_dict
+
+    def _handle_command_from_ml(self, cmd, ml_name):
+        if isinstance(cmd, dict):
+            self._check_delay(ml_name, cmd["frame"])
+            return cmd["command"]
+
+        if isinstance(cmd, MLProcessError):
+            # print(cmd_received.message)
+            # handle error from ai clients
+            self._move_ml_to_dead(ml_name, GameError(
+                error_type=ErrorEnum.AI_EXEC_ERROR,
+                message=str(cmd),
+                frame=self._frame_count
+            ))
+        elif isinstance(cmd, GameError):
+            self._move_ml_to_dead(ml_name, cmd)
+
+        return None
+
+    def _move_ml_to_dead(self, ml_name, error):
+        self._send_game_error_with_obj(error)
+        self._dead_ml_names.append(ml_name)
+        self._active_ml_names.remove(ml_name)
 
     def _check_delay(self, ml_name, cmd_frame):
         """
