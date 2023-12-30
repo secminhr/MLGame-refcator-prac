@@ -1,6 +1,8 @@
 from threading import Thread
 from queue import Queue
 
+from mlgame.core.exceptions import GameError
+
 from mlgame.core.env import WS_WAIT_GAME_TIMEOUT
 
 
@@ -190,6 +192,47 @@ class GameCommManager:
         comm_handler.set_recv_end(recv_end)
         comm_handler.set_send_end(send_end)
         self._comm_to_others.add_comm_handler(client_name, comm_handler)
+
+    def send_game_result(self, game_result):
+        self.send_to_others({
+            "type": "game_result",
+            "data": game_result
+        })
+
+    def send_system_message(self, message):
+        self.send_to_others({
+            "type": "system_message",
+            "data": {"message": message}
+        })
+
+    def send_game_info(self, game_info_dict):
+        self.send_to_others({
+            "type": "game_info",
+            "data": game_info_dict
+        })
+
+    def send_game_progress(self, game_progress_dict, frame):
+        """
+        Send the game progress to the transition server
+        """
+        game_progress_dict["frame"] = frame
+        self.send_to_others({
+            "type": "game_progress",
+            "data": game_progress_dict
+        })
+
+    def send_game_error_with_obj(self, error: GameError):
+        self.send_to_others({
+            "type": "game_error",
+            "data": {
+                "message": error.message,
+                "error_type": error.error_type.name,
+                "frame": error.frame
+            }
+        })
+
+    def send_end_message(self):
+        self.send_to_others(None)
 
     def send_to_others(self, obj):
         """

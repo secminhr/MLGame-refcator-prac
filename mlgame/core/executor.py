@@ -184,10 +184,10 @@ class GameExecutor(ExecutorInterface):
 
     def run(self):
         try:
-            self._send_system_message("AI準備中")
-            self._send_game_info(self.game.get_scene_init_data())
+            self.game_comm.send_system_message("AI準備中")
+            self.game_comm.send_game_info(self.game.get_scene_init_data())
             self._wait_all_ml_ready()
-            self._send_system_message("遊戲啟動")
+            self.game_comm.send_system_message("遊戲啟動")
             while not self._quit_or_esc():
                 if self.game_view.is_paused():
                     # 這裡的寫法不太好，但是可以讓遊戲暫停時，可以調整畫面。因為game_view裡面有調整畫面的程式。
@@ -204,7 +204,7 @@ class GameExecutor(ExecutorInterface):
                 # save image
                 if self._output_folder:
                     self.game_view.save_image(f"{self._output_folder}/{self._frame_count:05d}.jpg")
-                self._send_game_progress(self._view_data)
+                self.game_comm.send_game_progress(self._view_data, self._total_frame)
 
                 # Do reset stuff
                 if result == "RESET" or result == "QUIT":
@@ -221,12 +221,12 @@ class GameExecutor(ExecutorInterface):
                     print(pd.DataFrame(attachments).to_string())
 
                     if self.one_shot_mode or result == "QUIT":
-                        self._send_system_message("遊戲結束")
-                        self._send_game_result(game_result)
+                        self.game_comm.send_system_message("遊戲結束")
+                        self.game_comm.send_game_result(game_result)
                         if self._output_folder:
                             save_json(self._output_folder, game_result)
-                        self._send_system_message("關閉遊戲")
-                        self._send_end_message()
+                        self.game_comm.send_system_message("關閉遊戲")
+                        self.game_comm.send_end_message()
                         time.sleep(1)
 
                         break
@@ -244,7 +244,7 @@ class GameExecutor(ExecutorInterface):
             # send to es
             e = GameProcessError(self._proc_name, traceback.format_exc())
             logger.exception("Some errors happened in game process.")
-            self._send_game_error_with_obj(GameError(
+            self.game_comm.send_game_error_with_obj(GameError(
                 error_type=ErrorEnum.GAME_EXEC_ERROR,
                 message=e.__str__(),
                 frame=self._frame_count,
@@ -268,7 +268,7 @@ class GameExecutor(ExecutorInterface):
                         # logger.info(recv.message)
                         self._dead_ml_names.append(ml_name)
                         self._active_ml_names.remove(ml_name)
-                        self._send_game_error_with_obj(recv)
+                        self.game_comm.send_game_error_with_obj(recv)
                         break
                 except Exception as e:
                     print("catch error 2")
@@ -279,7 +279,7 @@ class GameExecutor(ExecutorInterface):
                         error_type=ErrorEnum.AI_INIT_ERROR, frame=0,
                         message=f"AI of {ml_name} has error at initial stage. {e.__str__()}")
 
-                    self._send_game_error_with_obj(ai_error)
+                    self.game_comm.send_game_error_with_obj(ai_error)
                     traceback.print_exc()
 
                     break
@@ -316,9 +316,9 @@ class GameExecutor(ExecutorInterface):
                 error_type=ErrorEnum.GAME_EXEC_ERROR, frame=self._frame_count,
                 message="All ml clients has been terminated")
 
-            self._send_game_error_with_obj(game_error)
-            self._send_game_result(self.game.get_game_result())
-            self._send_end_message()
+            self.game_comm.send_game_error_with_obj(game_error)
+            self.game_comm.send_game_result(self.game.get_game_result())
+            self.game_comm.send_end_message()
 
             raise error
         return cmd_dict
@@ -342,7 +342,7 @@ class GameExecutor(ExecutorInterface):
         return None
 
     def _move_ml_to_dead(self, ml_name, error):
-        self._send_game_error_with_obj(error)
+        self.game_comm.send_game_error_with_obj(error)
         self._dead_ml_names.append(ml_name)
         self._active_ml_names.remove(ml_name)
 
@@ -361,67 +361,6 @@ class GameExecutor(ExecutorInterface):
             return self._frame_count > 30000
         else:
             return quit_or_esc()
-
-    def _send_game_result(self, game_result_dict):
-        # TO be deprecated("_send_game_error_with_obj")
-        data_dict = {
-            "type": "game_result",
-            "data": game_result_dict
-        }
-        self.game_comm.send_to_others(data_dict)
-
-    def _send_system_message(self, msg: str):
-        data_dict = {
-            "type": "system_message",
-            "data": {"message": msg}
-        }
-        self.game_comm.send_to_others(data_dict)
-
-    def _send_game_info(self, game_info_dict):
-        data_dict = {
-            "type": "game_info",
-            "data": game_info_dict
-        }
-        self.game_comm.send_to_others(data_dict)
-
-    def _send_game_progress(self, game_progress_dict):
-        """
-        Send the game progress to the transition server
-        """
-        game_progress_dict["frame"] = self._total_frame
-        data_dict = {
-            "type": "game_progress",
-            "data": game_progress_dict
-        }
-
-        self.game_comm.send_to_others(data_dict)
-        # print(data_dict)
-
-    def _send_game_error(self, system_message):
-        # TO be deprecated("_send_game_error_with_obj")
-        data_dict = {
-            "type": "game_error",
-            "data": {"message": system_message}
-        }
-
-        self.game_comm.send_to_others(data_dict)
-
-    def _send_game_error_with_obj(self, error: GameError):
-        # print(error)
-        data_dict = {
-            "type": "game_error",
-            "data": {
-                "message": error.message,
-                "error_type": error.error_type.name,
-                "frame": error.frame
-            }
-        }
-        self.game_comm.send_to_others(data_dict)
-
-        # self._send_game_error(data_dict)
-
-    def _send_end_message(self):
-        self.game_comm.send_to_others(None)
 
 
 class ProgressLogExecutor(ExecutorInterface):
