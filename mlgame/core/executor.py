@@ -190,64 +190,36 @@ class GameExecutor(ExecutorInterface):
                     self.game_view.draw(self._view_data)
                     time.sleep(0.05)
                     continue
-                cmd_dict = self._make_ml_execute()
-                result = self.game.update(cmd_dict)
-
-                self._frame_count += 1
-                self._total_frame += 1
-                self._view_data = self.game.get_scene_progress_data()
-                self.game_view.draw(self._view_data)
-                # save image
-                if self._output_folder:
-                    self.game_view.save_image(f"{self._output_folder}/{self._frame_count:05d}.jpg")
-                view_data = self._view_data
-                view_data["frame"] = self._total_frame
-                self.game_comm.send_game_progress(view_data)
-
+                result = self._update_frame()
                 # Do reset stuff
-                if result == "RESET" or result == "QUIT":
-                    scene_info_dict = self.game.get_data_from_game_to_player()
-                    # send to ml_clients and don't parse any command , while client reset ,
-                    # self._wait_all_ml_ready() will works and not blocks the process
-                    for ml_name in self._active_ml_names:
-                        self.game_comm.send_to_ml((scene_info_dict[ml_name], []), ml_name)
-                    # TODO check what happen when bigfile is saved
-                    time.sleep(0.1)
-                    game_result = self.game.get_game_result()
+                if result == "QUIT" or (result == "RESET" and self.one_shot_mode):
+                    game_result = self._reset()
+                    self._end_game_normal(game_result)
+                    time.sleep(1)
+                    return
 
-                    attachments = game_result['attachment']
-                    print(pd.DataFrame(attachments).to_string())
-
-                    if self.one_shot_mode or result == "QUIT":
-                        self.game_comm.send_system_message("遊戲結束")
-                        self.game_comm.send_game_result(game_result)
-                        if self._output_folder:
-                            save_json(self._output_folder, game_result)
-                        self.game_comm.send_system_message("關閉遊戲")
-                        self.game_comm.send_end_message()
-                        time.sleep(1)
-
-                        break
-
+                if result == "RESET":
+                    self._reset()
                     self.game.reset()
                     self.game_view.reset()
-
-                    self._frame_count = 0
                     # TODO think more
-                    for name in self._active_ml_names:
-                        self._ml_delayed_frames[name] = 0
                     self._wait_all_ml_ready()
+
         except Exception as e:
             # handle unknown exception
+            # end game
+            self.game_comm.send_game_result(self.game.get_game_result())
+            self.game_comm.send_end_message()
+
             # send to es
             e = GameProcessError(self._proc_name, traceback.format_exc())
             logger.exception("Some errors happened in game process.")
             self.game_comm.send_game_error_with_obj(GameError(
                 error_type=ErrorEnum.GAME_EXEC_ERROR,
                 message=e.__str__(),
-                frame=self._frame_count,
-
+                frame=self._frame_count
             ))
+
 
     def _wait_all_ml_ready(self):
         """
@@ -276,6 +248,22 @@ class GameExecutor(ExecutorInterface):
 
         return recv
 
+    def _update_frame(self):
+        cmd_dict = self._make_ml_execute()
+        result = self.game.update(cmd_dict)
+
+        self._frame_count += 1
+        self._total_frame += 1
+        self._view_data = self.game.get_scene_progress_data()
+        self.game_view.draw(self._view_data)
+        # save image
+        if self._output_folder:
+            self.game_view.save_image(f"{self._output_folder}/{self._frame_count:05d}.jpg")
+        view_data = self._view_data
+        view_data["frame"] = self._total_frame
+        self.game_comm.send_game_progress(view_data)
+
+        return result
 
     def _make_ml_execute(self) -> dict:
         """
@@ -310,8 +298,6 @@ class GameExecutor(ExecutorInterface):
                 message="All ml clients has been terminated")
 
             self.game_comm.send_game_error_with_obj(game_error)
-            self.game_comm.send_game_result(self.game.get_game_result())
-            self.game_comm.send_end_message()
 
             raise error
         return cmd_dict
@@ -362,6 +348,32 @@ class GameExecutor(ExecutorInterface):
             message=e.__str__(),
             frame=self._frame_count
         ))
+
+    def _reset(self):
+        scene_info_dict = self.game.get_data_from_game_to_player()
+        # send to ml_clients and don't parse any command , while client reset ,
+        # self._wait_all_ml_ready() will works and not blocks the process
+        for ml_name in self._active_ml_names:
+            self.game_comm.send_to_ml((scene_info_dict[ml_name], []), ml_name)
+        # TODO check what happen when bigfile is saved
+        time.sleep(0.1)
+        game_result = self.game.get_game_result()
+
+        attachments = game_result['attachment']
+        print(pd.DataFrame(attachments).to_string())
+
+        self._frame_count = 0
+        for name in self._active_ml_names:
+            self._ml_delayed_frames[name] = 0
+        return game_result
+
+    def _end_game_normal(self, game_result):
+        self.game_comm.send_system_message("遊戲結束")
+        self.game_comm.send_game_result(game_result)
+        if self._output_folder:
+            save_json(self._output_folder, game_result)
+        self.game_comm.send_system_message("關閉遊戲")
+        self.game_comm.send_end_message()
 
 
 class ProgressLogExecutor(ExecutorInterface):
