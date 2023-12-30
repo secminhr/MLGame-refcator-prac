@@ -1,5 +1,7 @@
 import os
-from unittest.mock import Mock
+from unittest.mock import Mock, ANY
+
+from mlgame.core.exceptions import GameError, ErrorEnum
 
 from mlgame.tests.test_executor.comm_mock_prototype import SendEnd, RecvEnd
 from mlgame.tests.test_executor.test_helper import assert_same
@@ -185,3 +187,38 @@ class TestGameExecutor:
             expect_calls.send_to_other.send({'type': 'system_message', 'data': {'message': '關閉遊戲'}})
             expect_calls.send_to_other.send(None)
 
+    def test_single_ai_client_game_error_at_ready(self):
+        game, game_mock = _mock_game(['UPDATE'] * 5 + ['QUIT'])
+        game_comm_manager, send_to_ml, send_to_other = _mock_comm_manager(
+            [GameError(error_type=ErrorEnum.AI_INIT_ERROR, message='test error', frame=0)] * 6
+        )
+        view, view_mock = _mock_view()
+        func_calls_test = _gather_mocks(game_mock, view_mock, send_to_ml, send_to_other)
+
+        executor = GameExecutor(
+            game,
+            game_comm_manager,
+            view,
+            no_display=True,
+            fps=5000  # use high fps to run test quickly
+        )
+        executor.run()
+
+        with assert_same(func_calls_test.mock_calls) as expect_calls:
+            expect_calls.send_to_other.send({'type': 'system_message', 'data': {'message': 'AI準備中'}})
+            expect_calls.send_to_other.send({'type': 'game_info', 'data': {'scene': 'aaannn'}})
+            expect_calls.send_to_other.send({'type': 'game_error', 'data': {'message': 'test error', 'error_type': 'AI_INIT_ERROR', 'frame': 0}})
+            expect_calls.send_to_other.send({'type': 'system_message', 'data': {'message': '遊戲啟動'}}),
+
+            expect_calls.view_mock.is_paused(),
+            expect_calls.send_to_other.send({
+                'type': 'game_error',
+                'data': {'message': 'All ml clients has been terminated', 'error_type': 'GAME_EXEC_ERROR', 'frame': 0}
+            })
+            expect_calls.send_to_other.send({'type': 'game_result', 'data': {'attachment': [1, 2]}})
+            expect_calls.send_to_other.send(None)
+            # message is the traceback, so we don't check it
+            expect_calls.send_to_other.send({
+                'type': 'game_error',
+                'data': {'message': ANY, 'error_type': 'GAME_EXEC_ERROR', 'frame': 0}
+            })

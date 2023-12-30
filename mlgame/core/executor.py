@@ -13,7 +13,7 @@ import websockets
 from orjson import orjson
 
 from mlgame.core.communication import GameCommManager, MLCommManager, TransitionCommManager
-from mlgame.core.exceptions import MLProcessError, GameProcessError, GameError, ErrorEnum
+from mlgame.core.exceptions import MLProcessError, GameProcessError, GameError, ErrorEnum, GameException
 from mlgame.game.generic import quit_or_esc
 from mlgame.game.paia_game import PaiaGame
 from mlgame.utils.io import save_json
@@ -249,8 +249,6 @@ class GameExecutor(ExecutorInterface):
 
             ))
 
-        pass
-
     def _wait_all_ml_ready(self):
         """
         Wait until receiving "READY" commands from all ml processes
@@ -258,29 +256,26 @@ class GameExecutor(ExecutorInterface):
         # Wait the ready command one by one
         for ml_name in self._active_ml_names:
             recv = ""
-            while recv != "READY":
-                try:
-                    recv = self.game_comm.recv_from_ml(ml_name)
-                    if isinstance(recv, GameError):
-                        # handle error when ai_client couldn't be ready state.
-                        # logger.info(recv.message)
-                        self._dead_ml_names.append(ml_name)
-                        self._active_ml_names.remove(ml_name)
-                        self.game_comm.send_game_error_with_obj(recv)
-                        break
-                except Exception as e:
-                    print("catch error 2")
-                    self._dead_ml_names.append(ml_name)
-                    self._active_ml_names.remove(ml_name)
-                    # self._send_game_error(f"AI of {ml_name} has error at initial stage.")
-                    ai_error = GameError(
-                        error_type=ErrorEnum.AI_INIT_ERROR, frame=0,
-                        message=f"AI of {ml_name} has error at initial stage. {e.__str__()}")
+            try:
+                while recv != "READY":
+                    recv = self._recv_from_ml(ml_name)
+            except GameException as e:
+                self._move_ml_to_dead(ml_name, e.game_error)
+            except Exception as e:
+                print("catch error 2")
+                ai_error = GameError(
+                    error_type=ErrorEnum.AI_INIT_ERROR, frame=0,
+                    message=f"AI of {ml_name} has error at initial stage. {e.__str__()}")
+                self._move_ml_to_dead(ml_name, ai_error)
+                traceback.print_exc()
 
-                    self.game_comm.send_game_error_with_obj(ai_error)
-                    traceback.print_exc()
+    def _recv_from_ml(self, ml_name):
+        recv = self.game_comm.recv_from_ml(ml_name)
+        if isinstance(recv, GameError):
+            raise GameException(recv)
 
-                    break
+        return recv
+
 
     def _make_ml_execute(self) -> dict:
         """
@@ -359,6 +354,14 @@ class GameExecutor(ExecutorInterface):
             return self._frame_count > 30000
         else:
             return quit_or_esc()
+
+    def _handle_process_error(self, e):
+        logger.exception("Some errors happened in game process.")
+        self.game_comm.send_game_error_with_obj(GameError(
+            error_type=ErrorEnum.GAME_EXEC_ERROR,
+            message=e.__str__(),
+            frame=self._frame_count
+        ))
 
 
 class ProgressLogExecutor(ExecutorInterface):

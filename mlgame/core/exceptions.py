@@ -99,3 +99,7 @@ class GameError(pydantic.BaseModel):
             }
         }
         return json.dumps(data)
+
+class GameException(Exception):
+    def __init__(self, game_error: GameError):
+        self.game_error = game_error
