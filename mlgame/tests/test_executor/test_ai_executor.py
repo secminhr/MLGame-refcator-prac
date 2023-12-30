@@ -1,4 +1,3 @@
-from contextlib import contextmanager
 from unittest.mock import Mock
 from typing import Callable
 
@@ -7,6 +6,9 @@ import pytest
 from mlgame.core.communication import MLCommManager
 
 from mlgame.core.executor import AIClientExecutor, AIClient
+from mlgame.tests.test_executor.comm_mock_prototype import RecvEnd, SendEnd
+from mlgame.tests.test_executor.test_helper import assert_same
+
 
 class MLPlay:
     def __init__(self, *args, **kwargs):
@@ -18,29 +20,9 @@ class MLPlay:
     def reset(self):
         pass
 
-class SendEnd:
-    def send(self, msg):
-        pass
-
-class RecvEnd:
-    def poll(self):
-        pass
-
-    def recv(self):
-        pass
-
 
 def fixed_ai_loader(ai: AIClient) -> Callable[[str, dict], AIClient]:
     return lambda ai_name, game_params: ai
-
-
-@contextmanager
-def assert_same(mock_calls):
-    expected_calls = Mock()
-    try:
-        yield expected_calls
-    finally:
-        assert mock_calls == expected_calls.mock_calls
 
 
 class TestAIExecutor:
