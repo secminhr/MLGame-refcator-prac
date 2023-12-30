@@ -23,11 +23,6 @@ class MLGameArgument(pydantic.BaseModel):
     output_folder: Union[Path, None] = None
     progress_folder: Union[Path, None] = None
 
-    @validator('is_manual', always=True)
-    def update_manual(cls, v, values) -> bool:
-        if 'ai_clients' in values:
-            return values['ai_clients'] is None
-        return True
 
     @validator('output_folder')
     def update_output_folder(cls, v, values):
