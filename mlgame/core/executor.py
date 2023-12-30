@@ -166,13 +166,11 @@ class GameExecutor(ExecutorInterface):
         self.frame_count = 0
         self.game_comm = game_comm
         self.game = game
-        self._active_ml_names = []
-        self._ml_delayed_frames = {}
         self._active_ml_names = list(self.game_comm.get_ml_names())
+        self._ml_delayed_frames = {}
         self._dead_ml_names = []
         self._ml_execution_time = 1 / fps
         self._fps = fps
-        self._ml_delayed_frames = {}
         self._output_folder = output_folder
         for name in self._active_ml_names:
             self._ml_delayed_frames[name] = 0
@@ -204,7 +202,9 @@ class GameExecutor(ExecutorInterface):
                 # save image
                 if self._output_folder:
                     self.game_view.save_image(f"{self._output_folder}/{self._frame_count:05d}.jpg")
-                self.game_comm.send_game_progress(self._view_data, self._total_frame)
+                view_data = self._view_data
+                view_data["frame"] = self._total_frame
+                self.game_comm.send_game_progress(view_data)
 
                 # Do reset stuff
                 if result == "RESET" or result == "QUIT":

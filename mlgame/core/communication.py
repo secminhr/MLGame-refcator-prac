@@ -194,47 +194,37 @@ class GameCommManager:
         self._comm_to_others.add_comm_handler(client_name, comm_handler)
 
     def send_game_result(self, game_result):
-        self.send_to_others({
-            "type": "game_result",
-            "data": game_result
-        })
+        self._send_data_to_others("game_result", game_result)
 
     def send_system_message(self, message):
-        self.send_to_others({
-            "type": "system_message",
-            "data": {"message": message}
-        })
+        self._send_data_to_others("system_message", {"message": message})
 
     def send_game_info(self, game_info_dict):
-        self.send_to_others({
-            "type": "game_info",
-            "data": game_info_dict
-        })
+        self._send_data_to_others("game_info", game_info_dict)
 
-    def send_game_progress(self, game_progress_dict, frame):
+    def send_game_progress(self, game_progress_dict):
         """
         Send the game progress to the transition server
         """
-        game_progress_dict["frame"] = frame
-        self.send_to_others({
-            "type": "game_progress",
-            "data": game_progress_dict
-        })
+        self._send_data_to_others("game_progress", game_progress_dict)
 
     def send_game_error_with_obj(self, error: GameError):
-        self.send_to_others({
-            "type": "game_error",
-            "data": {
-                "message": error.message,
-                "error_type": error.error_type.name,
-                "frame": error.frame
-            }
+        self._send_data_to_others("game_error", {
+            "message": error.message,
+            "error_type": error.error_type.name,
+            "frame": error.frame
         })
 
     def send_end_message(self):
-        self.send_to_others(None)
+        self._send_to_others(None)
 
-    def send_to_others(self, obj):
+    def _send_data_to_others(self, type, data):
+        self._send_to_others({
+            "type": type,
+            "data": data
+        })
+
+    def _send_to_others(self, obj):
         """
         Send the object to all ml process
         """
