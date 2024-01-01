@@ -7,7 +7,7 @@ from functools import lru_cache
 import pygame
 
 from mlgame.view.decorator import K_BACKGROUND, K_SCENE
-from mlgame.view.view_model import SceneInfo
+from mlgame.view.view_model import SceneInfo, Text
 
 KEYS = [
     pygame.K_a, pygame.K_b, pygame.K_c, pygame.K_d, pygame.K_e, pygame.K_f, pygame.K_g, pygame.K_h, pygame.K_i,
@@ -155,7 +155,7 @@ class PygameView(PygameViewInterface):
                     result[file["image_id"]] = image
         return result
 
-    def draw_obj(self, object_information):
+    def draw(self, object_information):
         self.screen.fill(self.background_color)
         self.adjust_pygame_screen()
 
@@ -168,223 +168,55 @@ class PygameView(PygameViewInterface):
             self.bias_point[1] = self.origin_bias_point[1] + self.bias_point_var[1]
 
         for game_object in self._fixed_backgound_objs:
-            self.draw_game_obj_according_type_with_bias(game_object, self.bias_point[0], self.bias_point[1], self.scale)
-
-        for game_object in object_information["background"]:
             game_object.draw(
                 SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height),
                 self.bias_point[0], self.bias_point[1], self.scale
             )
-            # self.draw_game_obj_according_type_with_bias(game_object, self.bias_point[0], self.bias_point[1], self.scale)
-        for game_object in object_information["object_list"]:
-            # let object could be shifted
-            # self.draw_game_obj_according_type_with_bias(game_object, self.bias_point[0], self.bias_point[1], self.scale)
-            game_object.draw(
-                SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height),
-                self.bias_point[0], self.bias_point[1], self.scale
-            )
-        if self._toggle_on:
-            for game_object in object_information["toggle_with_bias"]:
-                # let object could be shifted
-                # self.draw_game_obj_according_type_with_bias(
-                #     game_object, self.bias_point[0], self.bias_point[1], self.scale
-                # )
+        try:
+            for game_object in object_information["background"]:
                 game_object.draw(
                     SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height),
                     self.bias_point[0], self.bias_point[1], self.scale
                 )
-            for game_object in object_information["toggle"]:
-                # self.draw_game_obj_according_type(game_object)
+            for game_object in object_information["object_list"]:
+                # let object could be shifted
+                game_object.draw(
+                    SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height),
+                    self.bias_point[0], self.bias_point[1], self.scale
+                )
+            if self._toggle_on:
+                for game_object in object_information["toggle_with_bias"]:
+                    # let object could be shifted
+                    game_object.draw(
+                        SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height),
+                        self.bias_point[0], self.bias_point[1], self.scale
+                    )
+                for game_object in object_information["toggle"]:
+                    game_object.draw(
+                        SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height)
+                    )
+            for game_object in object_information["foreground"]:
+                # object should not be shifted
                 game_object.draw(
                     SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height)
                 )
-        for game_object in object_information["foreground"]:
-            # object should not be shifted
-            # self.draw_game_obj_according_type(game_object)
-            game_object.draw(
-                SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height)
-            )
-        pygame.display.flip()
+        except Text.FontNotFoundError as e:
+            font_style_list = e.font_style.split(" ", -1)
+            size = int(font_style_list[0].replace("px", "", 1))
+            font_type = font_style_list[1].lower()
+            if "BOLD" in font_style_list:
+                font = pygame.font.Font(pygame.font.match_font(font_type, bold=True), size * self.scale)
+            else:
+                font = pygame.font.Font(pygame.font.match_font(font_type), size * self.scale)
+            self.font[e.font_style] = font
 
-    def draw(self, object_information):
-        '''
-        每個frame呼叫一次，把角色畫在螢幕上
-        :param object_information:
-        :return:
-        '''
-        self.screen.fill(self.background_color)
-        self.adjust_pygame_screen()
-        # TODO draw fixed frame in scene_init data
-
-        if "view_center_coordinate" in object_information["game_sys_info"]:
-            self.origin_bias_point = [
-                object_information["game_sys_info"]["view_center_coordinate"][0],
-                object_information["game_sys_info"]["view_center_coordinate"][1]
-            ]
-            self.bias_point[0] = self.origin_bias_point[0] + self.bias_point_var[0]
-            self.bias_point[1] = self.origin_bias_point[1] + self.bias_point_var[1]
-        for game_object in self._fixed_backgound_objs:
-            self.draw_game_obj_according_type_with_bias(game_object, self.bias_point[0], self.bias_point[1], self.scale)
-
-        for game_object in object_information["background"]:
-            self.draw_game_obj_according_type_with_bias(game_object, self.bias_point[0], self.bias_point[1], self.scale)
-        for game_object in object_information["object_list"]:
-            # let object could be shifted
-            self.draw_game_obj_according_type_with_bias(game_object, self.bias_point[0], self.bias_point[1], self.scale)
-        if self._toggle_on:
-            for game_object in object_information["toggle_with_bias"]:
-                # let object could be shifted
-                self.draw_game_obj_according_type_with_bias(
-                    game_object, self.bias_point[0], self.bias_point[1], self.scale
-                )
-            for game_object in object_information["toggle"]:
-                self.draw_game_obj_according_type(game_object)
-        for game_object in object_information["foreground"]:
-            # object should not be shifted
-            self.draw_game_obj_according_type(game_object)
+            # retry
+            self.draw(object_information)
         pygame.display.flip()
 
     def save_image(self, img_path: os.path.abspath):
         pygame.image.save(self.screen, img_path)
         pass
-
-    def draw_game_obj_according_type(self, game_object, scale=1):
-        self.draw_game_obj_according_type_with_bias(game_object, 0, 0, scale)
-
-    def draw_game_obj_according_type_with_bias(self, game_object, bias_x, bias_y, scale=1):
-        if game_object[TYPE] == IMAGE:
-            self.draw_image(
-                game_object["image_id"], game_object["x"] + bias_x, game_object["y"] + bias_y,
-                game_object["width"], game_object["height"], game_object["angle"], scale)
-
-        elif game_object[TYPE] == RECTANGLE:
-            self.draw_rect(
-                game_object["x"] + bias_x, game_object["y"] + bias_y, game_object["width"],
-                game_object["height"],
-                transfer_hex_to_rgba(game_object[COLOR]), scale)
-
-        elif game_object[TYPE] == POLYGON:
-            self.draw_polygon(game_object["points"], transfer_hex_to_rgba(game_object[COLOR]), bias_x, bias_y, scale)
-        elif game_object[TYPE] == AAPOLYGON:
-            self.draw_aapolygon(game_object["points"], transfer_hex_to_rgba(game_object[COLOR]), bias_x, bias_y, scale)
-
-        elif game_object[TYPE] == TEXT:
-            self.draw_text(
-                game_object["content"], game_object["font-style"],
-                game_object["x"] + bias_x, game_object["y"] + bias_y,
-                transfer_hex_to_rgba(game_object[COLOR]),
-                scale)
-        elif game_object[TYPE] == LINE:
-            self.draw_line(
-                game_object["x1"] + bias_x, game_object["y1"] + bias_y,
-                game_object["x2"] + bias_x, game_object["y2"] + bias_y,
-                game_object["width"],
-                transfer_hex_to_rgba(game_object[COLOR]), scale)
-
-        else:
-            pass
-
-        # hex # need turn to RGB
-
-    def draw_image(self, image_id, x, y, width, height, radian_angle, scale=1):
-        scaled_img = scale_img(self.image_dict[image_id], width, height, scale)
-        rotated_img = rotate_img(scaled_img, radian_angle)
-        # print(angle)
-        rect = rotated_img.get_rect()
-        rect.x = x * scale + scale_bias_of_coordinate(self.width, scale)
-        rect.y = y * scale + scale_bias_of_coordinate(self.height, scale)
-        self.screen.blit(rotated_img, rect)
-
-    def draw_rect(self, x: int, y: int, width: int, height: int, color, scale=1):
-        pygame.draw.rect(
-            self.screen, color,
-            pygame.Rect(x * scale + scale_bias_of_coordinate(self.width, scale),
-                        y * scale + scale_bias_of_coordinate(self.height, scale),
-                        width * scale,
-                        height * scale))
-        # transparent_surface = pygame.Surface((width * scale, height * scale), pygame.SRCALPHA)
-        # transparent_surface.fill(color)
-        #
-        # self.screen.blit(transparent_surface,  (x * scale + scale_bias_of_coordinate(self.width, scale),
-        #                          y * scale + scale_bias_of_coordinate(self.height, scale)))
-
-    def draw_line(self, x1, y1, x2, y2, width, color, scale=1):
-        # TODO revise sharper
-        offset_width = scale_bias_of_coordinate(self.width, scale)
-        offset_height = scale_bias_of_coordinate(self.height, scale)
-
-        # import pygame.gfxdraw
-        # pygame.gfxdraw.line(
-        #     self.screen,
-        #     int(x1 * scale + offset_width),int( y1 * scale + offset_height),
-        #     int(x2 * scale + offset_width), int(y2 * scale + offset_height),
-        #     color
-        #     # int(width * scale)
-        # )
-        # pygame.draw.line(
-        #     self.screen, color,
-        #     (x1 * scale + offset_width, y1 * scale + offset_height),
-        #     (x2 * scale + offset_width, y2 * scale + offset_height),
-        #     1
-        # )
-        if scale != 1:
-
-            offset_width = scale_bias_of_coordinate(self.width, scale)
-            offset_height = scale_bias_of_coordinate(self.height, scale)
-            pygame.draw.line(self.screen, color, (x1 * scale + offset_width, y1 * scale + offset_height),
-                             (x2 * scale + offset_width, y2 * scale + offset_height), int(width * scale))
-        else:
-            pygame.draw.line(self.screen, color, (x1, y1), (x2 * scale, y2), int(width))
-
-    def draw_polygon(self, points, color, bias_x=0, bias_y=0, scale=1):
-        vertices = []
-        for p in points:
-            vertices.append((
-                (p["x"] + bias_x) * scale + scale_bias_of_coordinate(self.width, scale),
-                (p["y"] + bias_y) * scale + scale_bias_of_coordinate(self.height, scale)
-            ))
-        pygame.draw.polygon(self.screen, color, vertices)
-
-    def draw_aapolygon(self, points, color, bias_x=0, bias_y=0, scale=1):
-        vertices = []
-        for p in points:
-            vertices.append((
-                (p["x"] + bias_x) * scale + scale_bias_of_coordinate(self.width, scale),
-                (p["y"] + bias_y) * scale + scale_bias_of_coordinate(self.height, scale)
-            ))
-        # TODO use aalines
-        # pygame.draw.aalines(self.screen, color=color, points=vertices,closed=True,
-        #                     blend=13)
-        pygame.draw.polygon(self.screen, color, vertices, width=scale * 5)
-        # import pygame.gfxdraw
-        # pygame.gfxdraw.aapolygon(
-        #     self.screen,
-        #     vertices,
-        #     color
-        # )
-        # pygame.gfxdraw.filled_polygon(
-        #     self.screen,
-        #     vertices,
-        #     color
-        # )
-
-    def draw_text(self, text, font_style, x, y, color, scale=1):
-        if font_style in self.font.keys():
-            font = self.font[font_style]
-        else:
-            font_style_list = font_style.split(" ", -1)
-            size = int(font_style_list[0].replace("px", "", 1))
-            font_type = font_style_list[1].lower()
-            if "BOLD" in font_style_list:
-                font = pygame.font.Font(pygame.font.match_font(font_type, bold=True), size * scale)
-            else:
-                font = pygame.font.Font(pygame.font.match_font(font_type), size * scale)
-            self.font[font_style] = font
-        text_surface = font.render(text, True, color)
-        text_rect = text_surface.get_rect()
-        text_rect.x, text_rect.y = (x * scale + scale_bias_of_coordinate(self.width, scale),
-                                    y * scale + scale_bias_of_coordinate(self.height, scale))
-        self.screen.blit(text_surface, text_rect)
 
     def adjust_pygame_screen(self):
         """

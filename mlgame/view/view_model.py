@@ -15,10 +15,6 @@ class SceneInfo:
 
 class View(abc.ABC):
     @abc.abstractmethod
-    def to_data(self):
-        pass
-
-    @abc.abstractmethod
     def draw(self, scene_info: SceneInfo, bias_x=0, bias_y=0, scale=1):
         pass
 
@@ -72,17 +68,6 @@ class Image(View):
         self.height = height
         self.angle = angle
 
-    def to_data(self):
-        return {
-            "type": "image",
-            "image_id": self.image_id,
-            "x": self.x,
-            "y": self.y,
-            "width": self.width,
-            "height": self.height,
-            "angle": self.angle
-        }
-
     def draw(self, scene_info, bias_x=0, bias_y=0, scale=1):
         scaled_img = scale_img(scene_info.assets[self.image_id], self.width, self.height, scale)
         rotated_img = rotate_img(scaled_img, self.angle)
@@ -115,18 +100,6 @@ class Rect(View):
         self.color = color
         self.angle = angle
 
-    def to_data(self):
-        return {
-            "type": "rect",
-            "name": self.name,
-            "x": self.x,
-            "y": self.y,
-            "width": self.width,
-            "height": self.height,
-            "color": self.color,
-            "angle": self.angle
-        }
-
     def draw(self, scene_info, bias_x=0, bias_y=0, scale=1):
         pygame.draw.rect(
             scene_info.display, self.color,
@@ -154,18 +127,6 @@ class Line(View):
         self.color = color
         self.width = width
 
-    def to_data(self):
-        return {
-            "type": "line",
-            "name": self.name,
-            "x1": self.x1,
-            "y1": self.y1,
-            "x2": self.x2,
-            "y2": self.y2,
-            "width": self.width,
-            "color": self.color
-        }
-
     def draw(self, scene_info, bias_x=0, bias_y=0, scale=1):
         if scale != 1:
             offset_width = scale_bias_of_coordinate(scene_info.width, scale)
@@ -188,14 +149,6 @@ class Polygon(View):
         self.points = points
         self.color = color
 
-    def to_data(self):
-        return {
-            "type": "polygon",
-            "name": self.name,
-            "color": self.color,
-            "points": list(map(lambda p: {"x": p[0], "y": p[1]}, self.points))
-        }
-
     def draw(self, scene_info, bias_x=0, bias_y=0, scale=1):
         vertices = []
         for p in self.points:
@@ -217,14 +170,6 @@ class AAPolygon(View):
         self.name = name
         self.points = points
         self.color = color
-
-    def to_data(self):
-        return {
-            "type": "aapolygon",
-            "name": self.name,
-            "color": self.color,
-            "points": list(map(lambda p: {"x": p[0], "y": p[1]}, self.points))
-        }
 
     def draw(self, scene_info, bias_x=0, bias_y=0, scale=1):
         vertices = []
@@ -250,16 +195,6 @@ class Text(View):
         self.y = y
         self.color = color
         self.font_style = font_style
-
-    def to_data(self):
-        return {
-            "type": "text",
-            "content": self.content,
-            "color": self.color,
-            "x": self.x,
-            "y": self.y,
-            "font-style": self.font_style
-        }
 
     class FontNotFoundError(Exception):
         def __init__(self, font_style: str):
@@ -331,25 +266,25 @@ def create_scene_progress_data(frame: int = 0, background=None, object_list=None
 
 
 def create_image_view_data(image_id, x, y, width, height, angle=0):
-    return Image(image_id, x, y, width, height, angle).to_data()
+    return Image(image_id, x, y, width, height, angle)
 
 def create_rect_view_data(name: str, x: int, y: int, width: int, height: int, color: str, angle: int = 0):
-    return Rect(name, x, y, width, height, color, angle).to_data()
+    return Rect(name, x, y, width, height, color, angle)
 
 
 def create_line_view_data(name: str, x1: int, y1: int, x2: int, y2: int, color: str, width: int = 2):
-    return Line(name, x1, y1, x2, y2, color, width).to_data()
+    return Line(name, x1, y1, x2, y2, color, width)
 
 
 def create_polygon_view_data(name: str, points: list, color: str):
-    return Polygon(name, points, color).to_data()
+    return Polygon(name, points, color)
 
 def create_aapolygon_view_data(name: str, points: list, color: str):
-    return AAPolygon(name, points, color).to_data()
+    return AAPolygon(name, points, color)
 
 
 def create_text_view_data(content: str, x: int, y: int, color: str, font_style="24px Arial"):
-    return Text(content, x, y, color, font_style).to_data()
+    return Text(content, x, y, color, font_style)
 
 
 def get_scene_init_sample_data() -> dict:
