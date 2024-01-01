@@ -115,16 +115,16 @@ class PygameView(PygameViewInterface):
         pygame.display.init()
         pygame.font.init()
         self.scene_init_data = game_info
-        self.width = self.scene_init_data[K_SCENE]["width"]
-        self.height = self.scene_init_data[K_SCENE]["height"]
         self.background_color = transfer_hex_to_rgb(self.scene_init_data[K_SCENE][COLOR])
-        self.screen = pygame.display.set_mode(
-            (self.width, self.height),
-            flags=pygame.RESIZABLE | pygame.SCALED)
         self.address = "GameView"
-        self.image_dict = self.loading_image()
         self._fixed_backgound_objs = self.scene_init_data.get(K_BACKGROUND, [])
-        self.font = {}
+
+        width = self.scene_init_data[K_SCENE]["width"]
+        height = self.scene_init_data[K_SCENE]["height"]
+        screen = pygame.display.set_mode(
+            (width, height),
+            flags=pygame.RESIZABLE | pygame.SCALED)
+        self.scene_info = SceneInfo(screen, self.loading_image(), {}, width, height)
         # self.map_width = game_info["map_width"]
         # self.map_height = game_info["map_height"]
         self.origin_bias_point = [self.scene_init_data[K_SCENE]["bias_x"], self.scene_init_data[K_SCENE]["bias_y"]]
@@ -156,7 +156,7 @@ class PygameView(PygameViewInterface):
         return result
 
     def draw(self, object_information):
-        self.screen.fill(self.background_color)
+        self.scene_info.display.fill(self.background_color)
         self.adjust_pygame_screen()
 
         if "view_center_coordinate" in object_information["game_sys_info"]:
@@ -167,39 +167,36 @@ class PygameView(PygameViewInterface):
             self.bias_point[0] = self.origin_bias_point[0] + self.bias_point_var[0]
             self.bias_point[1] = self.origin_bias_point[1] + self.bias_point_var[1]
 
+        # in draw()
         for game_object in self._fixed_backgound_objs:
             game_object.draw(
-                SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height),
+                self.scene_info,
                 self.bias_point[0], self.bias_point[1], self.scale
             )
         try:
             for game_object in object_information["background"]:
                 game_object.draw(
-                    SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height),
+                    self.scene_info,
                     self.bias_point[0], self.bias_point[1], self.scale
                 )
             for game_object in object_information["object_list"]:
                 # let object could be shifted
                 game_object.draw(
-                    SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height),
+                    self.scene_info,
                     self.bias_point[0], self.bias_point[1], self.scale
                 )
             if self._toggle_on:
                 for game_object in object_information["toggle_with_bias"]:
                     # let object could be shifted
                     game_object.draw(
-                        SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height),
+                        self.scene_info,
                         self.bias_point[0], self.bias_point[1], self.scale
                     )
                 for game_object in object_information["toggle"]:
-                    game_object.draw(
-                        SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height)
-                    )
+                    game_object.draw(self.scene_info)
             for game_object in object_information["foreground"]:
                 # object should not be shifted
-                game_object.draw(
-                    SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height)
-                )
+                game_object.draw(self.scene_info)
         except Text.FontNotFoundError as e:
             font_style_list = e.font_style.split(" ", -1)
             size = int(font_style_list[0].replace("px", "", 1))
@@ -208,14 +205,14 @@ class PygameView(PygameViewInterface):
                 font = pygame.font.Font(pygame.font.match_font(font_type, bold=True), size * self.scale)
             else:
                 font = pygame.font.Font(pygame.font.match_font(font_type), size * self.scale)
-            self.font[e.font_style] = font
+            self.scene_info.fonts[e.font_style] = font
 
             # retry
             self.draw(object_information)
         pygame.display.flip()
 
     def save_image(self, img_path: os.path.abspath):
-        pygame.image.save(self.screen, img_path)
+        pygame.image.save(self.scene_info.display, img_path)
         pass
 
     def adjust_pygame_screen(self):
