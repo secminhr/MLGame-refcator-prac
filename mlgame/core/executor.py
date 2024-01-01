@@ -42,21 +42,19 @@ class AIClient(abc.ABC):
         return (hasattr(subclass, 'update') and callable(subclass.update) and
                 hasattr(subclass, 'reset') and callable(subclass.reset))
 
+def ai_client_loader(ai_client_path: str, ai_name, game_params):
+    module_name = os.path.basename(ai_client_path)
+    spec = importlib.util.spec_from_file_location(module_name, ai_client_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.MLPlay(ai_name=ai_name, game_params=game_params)
 
 class AIClientExecutor(ExecutorInterface):
-    @classmethod
-    def ai_client_loader(cls, ai_client_path: str, ai_name, game_params):
-        module_name = os.path.basename(ai_client_path)
-        spec = importlib.util.spec_from_file_location(module_name, ai_client_path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module.MLPlay(ai_name=ai_name, game_params=game_params)
-
     def __init__(self, ai_client_path: str, ai_comm: MLCommManager, ai_name="1P",
                  game_params: dict = {}, ai_loader: Callable[[str, dict], AIClient] = None):
         self._frame_count = 0
         self.ai_comm = ai_comm
-        self.ai_loader = ai_loader if ai_loader else functools.partial(AIClientExecutor.ai_client_loader, ai_client_path)
+        self.ai_loader = ai_loader if ai_loader else functools.partial(ai_client_loader, ai_client_path)
         self._proc_name = ai_client_path
         # self._args_for_ml_play = args
         # self._kwargs_for_ml_play = kwargs
