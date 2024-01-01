@@ -7,6 +7,7 @@ from functools import lru_cache
 import pygame
 
 from mlgame.view.decorator import K_BACKGROUND, K_SCENE
+from mlgame.view.view_model import SceneInfo
 
 KEYS = [
     pygame.K_a, pygame.K_b, pygame.K_c, pygame.K_d, pygame.K_e, pygame.K_f, pygame.K_g, pygame.K_h, pygame.K_i,
@@ -154,6 +155,57 @@ class PygameView(PygameViewInterface):
                     result[file["image_id"]] = image
         return result
 
+    def draw_obj(self, object_information):
+        self.screen.fill(self.background_color)
+        self.adjust_pygame_screen()
+
+        if "view_center_coordinate" in object_information["game_sys_info"]:
+            self.origin_bias_point = [
+                object_information["game_sys_info"]["view_center_coordinate"][0],
+                object_information["game_sys_info"]["view_center_coordinate"][1]
+            ]
+            self.bias_point[0] = self.origin_bias_point[0] + self.bias_point_var[0]
+            self.bias_point[1] = self.origin_bias_point[1] + self.bias_point_var[1]
+
+        for game_object in self._fixed_backgound_objs:
+            self.draw_game_obj_according_type_with_bias(game_object, self.bias_point[0], self.bias_point[1], self.scale)
+
+        for game_object in object_information["background"]:
+            game_object.draw(
+                SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height),
+                self.bias_point[0], self.bias_point[1], self.scale
+            )
+            # self.draw_game_obj_according_type_with_bias(game_object, self.bias_point[0], self.bias_point[1], self.scale)
+        for game_object in object_information["object_list"]:
+            # let object could be shifted
+            # self.draw_game_obj_according_type_with_bias(game_object, self.bias_point[0], self.bias_point[1], self.scale)
+            game_object.draw(
+                SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height),
+                self.bias_point[0], self.bias_point[1], self.scale
+            )
+        if self._toggle_on:
+            for game_object in object_information["toggle_with_bias"]:
+                # let object could be shifted
+                # self.draw_game_obj_according_type_with_bias(
+                #     game_object, self.bias_point[0], self.bias_point[1], self.scale
+                # )
+                game_object.draw(
+                    SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height),
+                    self.bias_point[0], self.bias_point[1], self.scale
+                )
+            for game_object in object_information["toggle"]:
+                # self.draw_game_obj_according_type(game_object)
+                game_object.draw(
+                    SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height)
+                )
+        for game_object in object_information["foreground"]:
+            # object should not be shifted
+            # self.draw_game_obj_according_type(game_object)
+            game_object.draw(
+                SceneInfo(self.screen, self.image_dict, self.font, self.width, self.height)
+            )
+        pygame.display.flip()
+
     def draw(self, object_information):
         '''
         每個frame呼叫一次，把角色畫在螢幕上
@@ -197,30 +249,7 @@ class PygameView(PygameViewInterface):
         pass
 
     def draw_game_obj_according_type(self, game_object, scale=1):
-        if game_object[TYPE] == IMAGE:
-            self.draw_image(
-                game_object["image_id"], game_object["x"], game_object["y"],
-                game_object["width"], game_object["height"], game_object["angle"], scale)
-
-        elif game_object[TYPE] == RECTANGLE:
-            self.draw_rect(
-                game_object["x"], game_object["y"], game_object["width"], game_object["height"],
-                transfer_hex_to_rgba(game_object[COLOR]), scale)
-
-        elif game_object[TYPE] == POLYGON:
-            self.draw_polygon(
-                game_object["points"], transfer_hex_to_rgba(game_object[COLOR]), scale)
-
-        elif game_object[TYPE] == TEXT:
-            self.draw_text(
-                game_object["content"], game_object["font-style"],
-                game_object["x"], game_object["y"], transfer_hex_to_rgba(game_object[COLOR]), scale)
-        elif game_object[TYPE] == LINE:
-            self.draw_line(
-                game_object["x1"], game_object["y1"], game_object["x2"], game_object["y2"],
-                game_object["width"], transfer_hex_to_rgba(game_object[COLOR]), scale)
-        else:
-            pass
+        self.draw_game_obj_according_type_with_bias(game_object, 0, 0, scale)
 
     def draw_game_obj_according_type_with_bias(self, game_object, bias_x, bias_y, scale=1):
         if game_object[TYPE] == IMAGE:

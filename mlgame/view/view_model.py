@@ -1,14 +1,28 @@
 import abc
+import math
 import random
+from functools import lru_cache
 
+import pygame
+
+class SceneInfo:
+    def __init__(self, display, assets, fonts, width, height):
+        self.display = display
+        self.assets = assets
+        self.fonts = fonts
+        self.width = width
+        self.height = height
 
 class View(abc.ABC):
     @abc.abstractmethod
     def to_data(self):
         pass
 
+    @abc.abstractmethod
+    def draw(self, scene_info: SceneInfo, bias_x=0, bias_y=0, scale=1):
+        pass
 
-class Scene(View):
+class Scene:
     def __init__(self, width: int, height: int, color: str = "#000000", bias_x=0, bias_y=0):
         """
         This is a value object
@@ -22,33 +36,23 @@ class Scene(View):
         self.bias_x = bias_x
         self.bias_y = bias_y
 
-    def to_data(self):
-        return {
-            "width": self.width,
-            "height": self.height,
-            "color": self.color,
-            "bias_x": self.bias_x,
-            "bias_y": self.bias_y
-        }
+@lru_cache
+def scale_img(img, origin_width, origin_height, scale_ratio):
+    return pygame.transform.scale(
+        img, (int(origin_width * scale_ratio), int(origin_height * scale_ratio))
+    )
 
+@lru_cache
+def rotate_img(scaled_img, radian_angle):
+    return pygame.transform.rotate(
+        scaled_img,
+        (radian_angle * 180 / math.pi) % 360
+    )
 
-class Asset(View):
-    def __init__(self, image_id: str, width: int, height: int, file_path: str, github_raw_url: str):
-        self.image_id = image_id
-        self.width = width
-        self.height = height
-        self.file_path = file_path
-        self.github_raw_url = github_raw_url
+@lru_cache
+def scale_bias_of_coordinate(obj_length, scale):
+    return obj_length / 2 * (1 - scale)
 
-    def to_data(self):
-        return {
-            "type": "image",
-            "image_id": self.image_id,
-            "width": self.width,
-            "height": self.height,
-            "file_path": self.file_path,
-            "url": self.github_raw_url
-        }
 
 
 class Image(View):
@@ -78,6 +82,15 @@ class Image(View):
             "height": self.height,
             "angle": self.angle
         }
+
+    def draw(self, scene_info, bias_x=0, bias_y=0, scale=1):
+        scaled_img = scale_img(scene_info.assets[self.image_id], self.width, self.height, scale)
+        rotated_img = rotate_img(scaled_img, self.angle)
+        # print(angle)
+        rect = rotated_img.get_rect()
+        rect.x = self.x * scale + scale_bias_of_coordinate(scene_info.width, scale)
+        rect.y = self.y * scale + scale_bias_of_coordinate(scene_info.height, scale)
+        scene_info.display.blit(rotated_img, rect)
 
 
 class Rect(View):
@@ -114,6 +127,14 @@ class Rect(View):
             "angle": self.angle
         }
 
+    def draw(self, scene_info, bias_x=0, bias_y=0, scale=1):
+        pygame.draw.rect(
+            scene_info.display, self.color,
+            pygame.Rect(self.x * scale + scale_bias_of_coordinate(scene_info.width, scale),
+                        self.y * scale + scale_bias_of_coordinate(scene_info.height, scale),
+                        self.width * scale,
+                        self.height * scale))
+
 
 class Line(View):
     """
@@ -145,6 +166,15 @@ class Line(View):
             "color": self.color
         }
 
+    def draw(self, scene_info, bias_x=0, bias_y=0, scale=1):
+        if scale != 1:
+            offset_width = scale_bias_of_coordinate(scene_info.width, scale)
+            offset_height = scale_bias_of_coordinate(scene_info.height, scale)
+            pygame.draw.line(scene_info.display, self.color, (self.x1 * scale + offset_width, self.y1 * scale + offset_height),
+                             (self.x2 * scale + offset_width, self.y2 * scale + offset_height), int(self.width * scale))
+        else:
+            pygame.draw.line(scene_info.display, self.color, (self.x1, self.y1), (self.x2 * scale, self.y2), int(self.width))
+
 
 class Polygon(View):
     """
@@ -165,6 +195,15 @@ class Polygon(View):
             "color": self.color,
             "points": list(map(lambda p: {"x": p[0], "y": p[1]}, self.points))
         }
+
+    def draw(self, scene_info, bias_x=0, bias_y=0, scale=1):
+        vertices = []
+        for p in self.points:
+            vertices.append((
+                (p["x"] + bias_x) * scale + scale_bias_of_coordinate(scene_info.width, scale),
+                (p["y"] + bias_y) * scale + scale_bias_of_coordinate(scene_info.height, scale)
+            ))
+        pygame.draw.polygon(scene_info.display, self.color, vertices)
 
 
 class AAPolygon(View):
@@ -187,6 +226,14 @@ class AAPolygon(View):
             "points": list(map(lambda p: {"x": p[0], "y": p[1]}, self.points))
         }
 
+    def draw(self, scene_info, bias_x=0, bias_y=0, scale=1):
+        vertices = []
+        for p in self.points:
+            vertices.append((
+                (p["x"] + bias_x) * scale + scale_bias_of_coordinate(scene_info.width, scale),
+                (p["y"] + bias_y) * scale + scale_bias_of_coordinate(scene_info.height, scale)
+            ))
+        pygame.draw.polygon(scene_info.display, self.color, vertices, width=scale * 5)
 
 class Text(View):
     """
@@ -214,12 +261,40 @@ class Text(View):
             "font-style": self.font_style
         }
 
+    class FontNotFoundError(Exception):
+        def __init__(self, font_style: str):
+            self.font_style = font_style
+
+    def draw(self, scene_info, bias_x=0, bias_y=0, scale=1):
+        if self.font_style not in scene_info.fonts.keys():
+            raise self.FontNotFoundError(self.font_style)
+
+        font = scene_info.fonts[self.font_style]
+        text_surface = font.render(self.content, True, self.color)
+        text_rect = text_surface.get_rect()
+        text_rect.x, text_rect.y = (self.x * scale + scale_bias_of_coordinate(scene_info.width, scale),
+                                    self.y * scale + scale_bias_of_coordinate(scene_info.height, scale))
+        scene_info.display.blit(text_surface, text_rect)
+
 def create_asset_init_data(image_id: str, width: int, height: int, file_path: str, github_raw_url: str):
     # assert file_path is valid
-    return Asset(image_id, width, height, file_path, github_raw_url).to_data()
+    return {
+        "type": "image",
+        "image_id": image_id,
+        "width": width,
+        "height": height,
+        "file_path": file_path,
+        "url": github_raw_url
+    }
 
 def create_scene_view_data(width: int, height: int, color: str = "#000000", bias_x=0, bias_y=0):
-    return Scene(width, height, color, bias_x, bias_y).to_data()
+    return {
+        "width": width,
+        "height": height,
+        "color": color,
+        "bias_x": bias_x,
+        "bias_y": bias_y
+    }
 
 
 def create_scene_progress_data(frame: int = 0, background=None, object_list=None,
